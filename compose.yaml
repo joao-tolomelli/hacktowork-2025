@@ -1,0 +1,19 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    restart: always
+    ports:
+      # Standard MQTT port
+      - "1883:1883"
+      # MQTT over secure WebSocket (for web browsers)
+      - "9001:9001"
+      # Standard MQTT over TLS/SSL (encrypted)
+      - "8883:8883"
+    volumes:
+      # Mount the custom configuration file
+      - ./broker/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      # Volume for persistent data (message persistence, retained messages, etc.)
+      - ./broker/data:/mosquitto/data
+      # Volume for logs
+      - ./broker/log:/mosquitto/log
