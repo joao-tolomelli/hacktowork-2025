@@ -2,7 +2,7 @@ services:
   mosquitto:
     image: eclipse-mosquitto
     container_name: mosquitto
-    restart: always
+    restart: unless-stopped
     ports:
       # Standard MQTT port
       - "1883:1883"
@@ -17,3 +17,14 @@ services:
       - ./broker/data:/mosquitto/data
       # Volume for logs
       - ./broker/log:/mosquitto/log
+  redis:
+    image: redis
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_db:/data
+
+volumes:
+  redis_db:
