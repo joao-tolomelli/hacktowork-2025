@@ -1,0 +1,1 @@
+Responsável por escutar os eventos do broker e registrá-los no banco Redis.
