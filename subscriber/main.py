@@ -39,6 +39,7 @@ def create_on_message(use_redis, redis_host, redis_port):
                 # r.lpush(f"mqtt_messages:{sensor_id}", json.dumps(metrics))
                 # i want to store each new metric collection as an entry in a existing list
                 r.rpush(f"mqtt_messages:{sensor_id}", json.dumps(metrics))
+                r.publish(f"mqtt_notifications:{sensor_id}", data)
             except Exception as e:
                 print(f"Failed to store message in Redis: {e}")
     return on_message
