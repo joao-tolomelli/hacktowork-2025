@@ -1,7 +1,7 @@
 #include "NetworkManager.h"
 
 NetworkManager::NetworkManager(const char* ssid, const char* password, const char* mqttServer, int mqttPort) 
-    : _mqttClient(_espClient) { // Inicializa o PubSubClient com o WiFiClient
+    : _mqttClient(_espClient) {
     _ssid = ssid;
     _password = password;
     _mqttServer = mqttServer;
@@ -14,51 +14,62 @@ void NetworkManager::begin() {
 }
 
 void NetworkManager::connectWifi() {
+    if (WiFi.status() == WL_CONNECTED) return;
+
     Serial.print("[Network] Conectando ao Wi-Fi: ");
     Serial.println(_ssid);
     
+    WiFi.mode(WIFI_STA);
     WiFi.begin(_ssid, _password);
     
-    // Pequeno loop de bloqueio apenas no boot
-    while (WiFi.status() != WL_CONNECTED) {
+    // CORREÇÃO: Timeout para não ficar preso aqui para sempre (Watchdog Friendly)
+    int tentativas = 0;
+    while (WiFi.status() != WL_CONNECTED && tentativas < 20) {
         delay(500);
         Serial.print(".");
+        tentativas++;
     }
-    Serial.println("\n[Network] Wi-Fi Conectado!");
-    Serial.print("[Network] IP: ");
-    Serial.println(WiFi.localIP());
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\n[Network] Wi-Fi Conectado!");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\n[Network] Falha ao conectar no Wi-Fi.");
+    }
 }
 
 void NetworkManager::reconnectMqtt() {
-    // Tenta conectar se não estiver conectado
     if (!_mqttClient.connected()) {
+        // Verifica se tem wifi antes de tentar mqtt
+        if (WiFi.status() != WL_CONNECTED) return;
+
         Serial.print("[Network] Tentando MQTT... ");
-        
-        // ID Randômico
         String clientId = "ESP32-" + String(random(0xffff), HEX);
         
         if (_mqttClient.connect(clientId.c_str())) {
             Serial.println("Conectado!");
         } else {
-            Serial.print("Falha, rc=");
+            // Falha silenciosa para não travar o loop
+            Serial.print("Falha rc=");
             Serial.print(_mqttClient.state());
+            Serial.println("");
         }
     }
 }
 
 void NetworkManager::update() {
-    // Garante que o Wi-Fi está ok
     if (WiFi.status() != WL_CONNECTED) {
         connectWifi();
     }
-
-    // Garante MQTT
-    if (!_mqttClient.connected()) {
+    
+    // Só tenta MQTT se tiver Wi-Fi
+    if (WiFi.status() == WL_CONNECTED && !_mqttClient.connected()) {
         reconnectMqtt();
     }
     
-    // Processa pacotes de entrada/keep-alive
-    _mqttClient.loop();
+    if (_mqttClient.connected()) {
+        _mqttClient.loop();
+    }
 }
 
 void NetworkManager::publish(const char* topic, const char* payload) {
@@ -69,4 +80,16 @@ void NetworkManager::publish(const char* topic, const char* payload) {
 
 bool NetworkManager::isConnected() {
     return _mqttClient.connected();
+}
+
+void NetworkManager::setCallback(std::function<void(char*, uint8_t*, unsigned int)> callback) {
+    _mqttClient.setCallback(callback);
+}
+
+void NetworkManager::subscribe(const char* topic) {
+    if (_mqttClient.connected()) {
+        _mqttClient.subscribe(topic);
+        Serial.print("[Network] Inscrito no tópico: ");
+        Serial.println(topic);
+    }
 }

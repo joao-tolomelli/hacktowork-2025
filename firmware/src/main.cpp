@@ -1,9 +1,11 @@
 #include <Arduino.h>
-#include "secrets.h"
 #include "FlowSensor.h"
 #include "NetworkManager.h"
+#include "Buzzer.h"
+#include "Led.h"
+#include "secrets.h"
 
-// --- Definição da Estrutura da Mensagem MQTT ---
+// --- Estruturas ---
 struct MensagemMQTT {
     char topico[40];
     char payload[20];
@@ -12,144 +14,220 @@ struct MensagemMQTT {
 // --- Objetos Globais ---
 NetworkManager network(WIFI_SSID, WIFI_PASSWORD, MQTT_BROKER_IP, MQTT_PORT);
 FlowSensor sensorChuveiro(25, 450.0);
+Buzzer buzzerAlerta(26, 0); 
+Led ledAviso(27);
 
-// --- Handles do FreeRTOS ---
+// --- Handles RTOS ---
 QueueHandle_t filaMQTT;
-TaskHandle_t handleTaskSensor;
+SemaphoreHandle_t semaforoFluxo;
 TaskHandle_t handleTaskRede;
+TaskHandle_t handleTaskSensor;
+
+// --- Variável Global de Estado do Alerta ---
+// Usada para o buzzer não ficar reiniciando o tom a cada mensagem recebida
+bool buzzerAtivo = false;
 
 // ============================================================
-// TASK 1: GERENTE DE REDE (Consumidor)
-// Responsável apenas por manter Wi-Fi/MQTT e despachar mensagens
+// CALLBACK MQTT (O que acontece quando chega mensagem)
+// ============================================================
+void callbackMQTT(char* topic, uint8_t* payload, unsigned int length) {
+    String msg = "";
+    for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+    
+    Serial.printf("[MQTT] %s: %s\n", topic, msg.c_str());
+
+    if (String(topic) == "chuveiro/limite") {
+        
+        // CENÁRIO 1: Aviso ("Está chegando perto") [cite: 32]
+        // Comportamento: Liga LED, Buzzer desligado
+        if (msg == "PROXIMO") {
+            if (!ledAviso.estaLigado()) {
+                Serial.println(">>> ALERTA VISUAL: Limite Próximo <<<");
+                ledAviso.ligar();
+            }
+            // Garante que o buzzer esteja quieto
+            if (buzzerAtivo) {
+                buzzerAlerta.parar();
+                buzzerAtivo = false;
+            }
+        } 
+        
+        // CENÁRIO 2: Estouro ("Passou do limite") [cite: 34]
+        // Comportamento: Liga Buzzer, Desliga LED (conforme solicitado)
+        else if (msg == "ESTOURO") {
+            // Apaga o aviso visual
+            if (ledAviso.estaLigado()) {
+                ledAviso.desligar();
+            }
+
+            // Liga o aviso sonoro
+            if (!buzzerAtivo) {
+                Serial.println(">>> ALERTA SONORO: ESTOURO! <<<");
+                buzzerAlerta.tocar(3000); // 3kHz
+                buzzerAtivo = true;
+            }
+        } 
+        
+        // CENÁRIO 3: Reset ("Banho novo ou normalizado") [cite: 37]
+        // Comportamento: Tudo desligado
+        else if (msg == "NORMAL" || msg == "RESET") {
+            Serial.println(">>> Status Normalizado. <<<");
+            buzzerAlerta.parar();
+            ledAviso.desligar();
+            buzzerAtivo = false;
+        }
+    }
+}
+
+// ============================================================
+// TASK DE REDE 
 // ============================================================
 void taskRede(void * parameter) {
-    network.begin(); // Conecta inicial
+    MensagemMQTT msg;
+    
+    // Configura o Callback ANTES de conectar
+    network.setCallback(callbackMQTT);
+    network.begin();
 
-    MensagemMQTT msgRecebida;
+    bool estavaConectado = false;
 
     for(;;) {
-        // Mantém a conexão viva
         network.update();
 
-        // Verifica se há mensagens na fila para enviar
-        if (xQueueReceive(filaMQTT, &msgRecebida, pdMS_TO_TICKS(10)) == pdTRUE) {
+        // Lógica de Reconexão e Assinatura (Subscribe)
+        if (network.isConnected()) {
             
-            // Se chegou aqui, tem mensagem para despachar
-            if (network.isConnected()) {
-                network.publish(msgRecebida.topico, msgRecebida.payload);
-                Serial.printf("[Rede] Enviado: %s -> %s\n", msgRecebida.topico, msgRecebida.payload);
-            } else {
-                Serial.println("[Rede] Erro: Sem conexão para enviar mensagem.");
+            // Se acabou de conectar, assina os tópicos
+            if (!estavaConectado) {
+                estavaConectado = true;
+                network.subscribe("chuveiro/limite");
             }
+
+            // Consome fila de envio (Publish)
+            if (xQueueReceive(filaMQTT, &msg, pdMS_TO_TICKS(10)) == pdTRUE) {
+                 network.publish(msg.topico, msg.payload);
+            }
+        } else {
+            estavaConectado = false;
+            vTaskDelay(pdMS_TO_TICKS(200));
         }
+        
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 // ============================================================
-// TASK 2: MONITORAMENTO DE SENSOR (Produtor)
-// Responsável apenas pela leitura do hardware
+// TASK DE SENSOR
 // ============================================================
 void taskSensor(void * parameter) {
-    const unsigned long TIMEOUT_BANHO = 15000;
-    const unsigned long INTERVALO_ENVIO = 1000;
-
-    unsigned long pulsosAnteriores = 0;
-    unsigned long ultimaAtividade = 0;
-    unsigned long ultimoEnvio = 0;
-    bool banhoAtivo = false;
-    
-    // Buffer temporário para criar a mensagem
-    MensagemMQTT msgEnviar; 
+    const unsigned long INTERVALO_ACUMULO = 5000; // 5 segundos
+    float acumulado = 0.0;
+    MensagemMQTT msg;
 
     for(;;) {
-        // Coleta dados
-        unsigned long pulsosAtuais = sensorChuveiro.getPulsosRaw();
-        float volumeAtual = sensorChuveiro.getVolume();
-        unsigned long agora = millis();
-
-        // Detecta Fluxo
-        if (pulsosAtuais > pulsosAnteriores) {
-            ultimaAtividade = agora;
-            pulsosAnteriores = pulsosAtuais;
-
-            if (!banhoAtivo) {
-                banhoAtivo = true;
-                sensorChuveiro.reset();
-                volumeAtual = 0;
-                pulsosAnteriores = 0;
-                
-                Serial.println(">>> SESSÃO INICIADA <<<");
-                
-                // Prepara mensagem e joga na fila
-                strcpy(msgEnviar.topico, "chuveiro/status");
-                strcpy(msgEnviar.payload, "INICIO");
-                xQueueSend(filaMQTT, &msgEnviar, portMAX_DELAY);
-            }
+        // Coleta e zera pulsos (Atômico)
+        unsigned long pulsos = sensorChuveiro.getPulsosAndReset();
+        
+        if (pulsos > 0) {
+            acumulado += (pulsos / 450.0);
         }
 
-        // Lógica do Banho
-        if (banhoAtivo) {
-            // Timer de Telemetria
-            if (agora - ultimoEnvio >= INTERVALO_ENVIO) {
-                ultimoEnvio = agora;
+        // Aguarda 5 segundos acumulando
+        vTaskDelay(pdMS_TO_TICKS(INTERVALO_ACUMULO));
 
-                // Formata dados
-                strcpy(msgEnviar.topico, "chuveiro/telemetria");
-                snprintf(msgEnviar.payload, 20, "%.3f", volumeAtual);
-                
-                // Envia para a fila (sem bloquear muito se a fila estiver cheia)
-                xQueueSend(filaMQTT, &msgEnviar, pdMS_TO_TICKS(10));
+        // Se houve fluxo neste intervalo, enfileira
+        if (acumulado > 0) {
+            strcpy(msg.topico, "chuveiro/telemetria");
+            snprintf(msg.payload, 20, "%.3f", acumulado);
+            
+            // Envia para a fila (timeout grande para garantir entrega interna)
+            if (xQueueSend(filaMQTT, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+                Serial.println("[Sensor] Erro: Fila cheia!");
             }
-
-            // Timeout / Fim
-            if (agora - ultimaAtividade > TIMEOUT_BANHO) {
-                Serial.println(">>> SESSÃO FINALIZADA <<<");
-                
-                /*
-                // Envia Total
-                strcpy(msgEnviar.topico, "chuveiro/total_final");
-                snprintf(msgEnviar.payload, 20, "%.3f", volumeAtual);
-                xQueueSend(filaMQTT, &msgEnviar, portMAX_DELAY);
-                */
-
-                // Envia Status Fim
-                strcpy(msgEnviar.topico, "chuveiro/status");
-                strcpy(msgEnviar.payload, "FIM");
-                xQueueSend(filaMQTT, &msgEnviar, portMAX_DELAY);
-
-                banhoAtivo = false;
-                sensorChuveiro.reset();
-                pulsosAnteriores = 0;
-            }
+            
+            acumulado = 0.0; // Zera para o próximo ciclo
         }
-
-        vTaskDelay(pdMS_TO_TICKS(50)); 
     }
 }
 
+// ============================================================
+// SETUP & LOOP
+// ============================================================
 void setup() {
     Serial.begin(115200);
-    sensorChuveiro.begin();
 
-    // Cria a Fila
-    // Capacidade para 10 mensagens. Se a rede cair, acumulamos até 10 leituras antes de perder dados.
-    filaMQTT = xQueueCreate(10, sizeof(MensagemMQTT));
+    // Inicializa Hardware
+    ledAviso.begin();
+    buzzerAlerta.begin();
+    
+    // Teste de Boot (Bip + Piscada)
+    ledAviso.ligar();
+    buzzerAlerta.bip(100);
+    delay(200);
+    ledAviso.desligar();
 
-    if (filaMQTT == NULL) {
-        Serial.println("Erro ao criar fila!");
-        while(1);
-    }
+    // RTOS
+    filaMQTT = xQueueCreate(20, sizeof(MensagemMQTT)); 
+    semaforoFluxo = xSemaphoreCreateBinary();
 
-    // Cria as Tasks
-    xTaskCreatePinnedToCore(
-        taskRede, "NetTask", 4096, NULL, 1, &handleTaskRede, 0
-    );
+    sensorChuveiro.begin(semaforoFluxo);
 
-    xTaskCreatePinnedToCore(
-        taskSensor, "SensorTask", 4096, NULL, 1, &handleTaskSensor, 1
-    );
+    xTaskCreatePinnedToCore(taskRede, "NetTask", 4096, NULL, 1, &handleTaskRede, 0);
+    xTaskCreatePinnedToCore(taskSensor, "SensorTask", 4096, NULL, 1, &handleTaskSensor, 1);
+    
+    vTaskSuspend(handleTaskRede);
+    vTaskSuspend(handleTaskSensor);
+    
+    Serial.println(">>> SISTEMA PRONTO (SLEEP) <<<");
 }
 
 void loop() {
-    vTaskDelete(NULL);
+    if (xSemaphoreTake(semaforoFluxo, portMAX_DELAY) == pdTRUE) {
+        Serial.println(">>> WAKE UP! Banho Detectado <<<");
+        vTaskResume(handleTaskRede);
+        vTaskResume(handleTaskSensor);
+        
+        // Envia INICIO
+        MensagemMQTT msgInicio;
+        strcpy(msgInicio.topico, "chuveiro/status");
+        strcpy(msgInicio.payload, "INICIO");
+        xQueueSend(filaMQTT, &msgInicio, 0);
+
+        // Monitoramento
+        unsigned long tempoSemPulsos = 0;
+        const unsigned long TIMEOUT_SLEEP = 10000; 
+
+        while (tempoSemPulsos < TIMEOUT_SLEEP) {
+            if (xSemaphoreTake(semaforoFluxo, pdMS_TO_TICKS(100)) == pdTRUE) {
+                tempoSemPulsos = 0; 
+            } else {
+                tempoSemPulsos += 100; 
+            }
+        }
+
+        Serial.println(">>> FIM DE FLUXO. <<<");
+        
+        // Envia FIM
+        MensagemMQTT msgFim;
+        strcpy(msgFim.topico, "chuveiro/status");
+        strcpy(msgFim.payload, "FIM");
+        xQueueSend(filaMQTT, &msgFim, 0);
+        
+        // Garante que o Buzzer desliga ao fim do banho (segurança)
+        buzzerAlerta.parar();
+        buzzerAtivo = false;
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // Esvazia fila
+        int drain = 0;
+        while (uxQueueMessagesWaiting(filaMQTT) > 0 && drain < 50) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            drain++;
+        }
+
+        vTaskSuspend(handleTaskSensor);
+        vTaskSuspend(handleTaskRede);
+        xSemaphoreTake(semaforoFluxo, 0); // Limpa semáforo
+    }
 }

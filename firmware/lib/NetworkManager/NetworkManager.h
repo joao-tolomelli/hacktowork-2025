@@ -33,6 +33,12 @@ public:
     
     // Verifica se está conectado
     bool isConnected();
+
+    // Define a função que será chamada quando chegar mensagem
+    void setCallback(std::function<void(char*, uint8_t*, unsigned int)> callback);
+    
+    // Assina um tópico para receber dados
+    void subscribe(const char* topic);
 };
 
 #endif

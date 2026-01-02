@@ -2,30 +2,26 @@
 #define FLOW_SENSOR_H
 
 #include <Arduino.h>
+#include <freertos/semphr.h> // Necessário para o semáforo
 
 class FlowSensor {
 private:
     uint8_t _pino;
     float _fatorCalibracao;
     
-    // Variáveis estáticas para funcionarem dentro da interrupção
+    // Ponteiro para o semáforo que acorda o sistema
+    static SemaphoreHandle_t _semaphoWakeUp;
     static volatile unsigned long _totalPulsos;
-    static void IRAM_ATTR _isr(); // A função de interrupção
+    static void IRAM_ATTR _isr(); 
 
 public:
-    // Construtor
     FlowSensor(uint8_t pino, float fator = 450.0);
-
-    void begin();
     
-    // Retorna o volume acumulado desde o último reset
-    float getVolume();
+    // Agora aceita um semáforo opcional na inicialização
+    void begin(SemaphoreHandle_t semaforo = NULL);
     
-    // Zera a contagem (início de um novo banho)
-    void reset();
-    
-    // Retorna se há fluxo (pulsos mudando) para ajudar na lógica de timeout
-    unsigned long getPulsosRaw();
+    // Retorna pulsos e ZERA o contador (para lógica de Delta)
+    unsigned long getPulsosAndReset();
 };
 
 #endif
