@@ -104,6 +104,19 @@ class BanhoRepository:
         ''', (banho.data_modificacao, banho.duracao, banho_id))
         self.conn.commit()
 
+    def finalize_banho(self, banho_id) -> None:
+        banho = self.get_banho_by_id(banho_id)
+        if not banho:
+            return None
+        banho.em_andamento = False
+        banho.data_modificacao = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        self.cursor.execute('''
+            UPDATE banhos
+            SET data_modificacao = ?, em_andamento = ?
+            WHERE id = ?
+        ''', (banho.data_modificacao, 0, banho_id))
+        self.conn.commit()
+
     def update_volume_agua(self, banho_id, volume_agua=None) -> None:
         banho = self.get_banho_by_id(banho_id)
         if not banho:
@@ -117,54 +130,3 @@ class BanhoRepository:
             WHERE id = ?
         ''', (banho.data_modificacao, banho.volume_agua, banho_id))
         self.conn.commit()
-
-    def store_telemetria(self, data):
-        """
-        'data' é o valor em litros recebido da telemetria
-        """
-        # Checar se o último banho está em andamento
-        last = self.get_latest_banho()
-        if last is None:
-            banho = Banho.default()
-            banho.volume_agua += float(data)
-            banho.duracao += 5  # assumindo que a telemetria chega a cada 5 segundos
-            self.create_banho()
-            self.update_volume_agua(banho._id, banho.volume_agua)
-            self.update_duracao(banho._id, banho.duracao)
-            self.conn.commit()
-            return banho
-        elif last.em_andamento:
-            last_banho = Banho(
-                _id=last._id,
-                data_criacao=last.data_criacao,
-                data_modificacao=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                duracao=last.duracao + 5,  # assumindo que a telemetria chega a cada 5 segundos
-                volume_agua=last.volume_agua + float(data)
-            )
-        else:
-            last_banho = self.create_banho()
-        self.update_duracao(last_banho._id, last_banho.duracao)
-        self.update_volume_agua(last_banho._id, last_banho.volume_agua)
-
-    def store_status(self, data):  # TODO: mover lógica para a camada de serviço
-        print("Storing status:", data)
-        if data == "INICIO":
-            print("Starting new banho record...")
-            last = self.get_latest_banho()
-            if last and last.em_andamento:
-                raise Exception("Já existe um banho em andamento.")
-            print("Creating new banho record...")
-            self.create_banho()
-        elif data == "FIM":
-            print("Finalizing banho record...")
-            last = self.get_latest_banho()
-            if last and last.em_andamento:
-                print("Updating banho record to finalize...")
-                last.em_andamento = False
-                last.data_modificacao = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                self.cursor.execute('''
-                    UPDATE banhos
-                    SET data_modificacao = ?, em_andamento = ?
-                    WHERE id = ?
-                ''', (last.data_modificacao, 0, last._id))
-                self.conn.commit()

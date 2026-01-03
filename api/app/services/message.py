@@ -1,14 +1,20 @@
-from .. import socketio
-from ..repositories import banho_repository
+import datetime
+from .. import r
 
 
 class MessageService:
     @staticmethod
     def handle_telemetria(message):
         data = message["data"].decode()
-        banho_repository.store_telemetria(data)
+        BanhoService.store_telemetria(data)
 
     @staticmethod
     def handle_status(message):
         data = message["data"].decode()
-        banho_repository.store_status(data)
+        BanhoService.store_status(data)
+
+    @staticmethod
+    def notify_limite():
+        r.publish("chuveiro:limite:notifications", datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+from .banho import BanhoService
