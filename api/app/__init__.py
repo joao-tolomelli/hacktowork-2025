@@ -9,7 +9,7 @@ from flask_socketio import SocketIO
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", engineio_logger=True, logger=True)
 r = Redis(host='localhost', port=6379)
 
 from .controllers.banho import bp as banho_bp

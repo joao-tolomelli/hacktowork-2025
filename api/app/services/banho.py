@@ -1,6 +1,7 @@
 import datetime
 from ..repositories import banho_repository
 from ..models.banho import Banho
+from .. import socketio
 
 
 class BanhoService:
@@ -16,6 +17,12 @@ class BanhoService:
         return None
 
     @staticmethod
+    def notify_banho_update() -> None:
+        print("Notifying clients about banho update...")
+        socketio.emit('banho_update', {})
+        print("Clients notified.")
+
+    @staticmethod
     def set_default_limit(limite: float) -> None:
         banho_repository.update_default_limit(limite)
 
@@ -23,8 +30,8 @@ class BanhoService:
     def set_banho_limit(banho_id, limite: float) -> None:
         banho_repository.update_banho_limit(banho_id, limite)
 
-    @staticmethod
-    def store_telemetria(data: str) -> None:
+    @classmethod
+    def store_telemetria(cls, data: str) -> None:
         last = banho_repository.get_latest_banho()
         if last is None:
             print("No existing banho record found. Creating a new one...")
@@ -56,10 +63,11 @@ class BanhoService:
             print("Banho duration limit reached. Sending notification...")
             MessageService.notify_limite()
             print("Notification sent.")
+        cls.notify_banho_update()
         return last_banho
 
-    @staticmethod
-    def store_status(data: str) -> None:
+    @classmethod
+    def store_status(cls, data: str) -> None:
         print("Storing status:", data)
         if data == "INICIO":
             print("Starting new banho record...")
@@ -74,5 +82,6 @@ class BanhoService:
             if last and last.em_andamento:
                 print("Updating banho record to finalize...")
                 banho_repository.finalize_banho(last._id)
+        cls.notify_banho_update()
 
 from .message import MessageService

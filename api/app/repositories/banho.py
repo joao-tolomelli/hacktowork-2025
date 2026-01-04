@@ -30,6 +30,13 @@ class BanhoRepository:
                 data_criacao TEXT
             )
         ''')
+        if not self.get_banho_limit():
+            default_limit = 50.0  # valor padrão inicial
+            data_criacao = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self.cursor.execute('''
+                INSERT INTO banho_limits (limite, data_criacao)
+                VALUES (?, ?)
+            ''', (default_limit, data_criacao))
         self.conn.commit()
 
     def get_banho_limit(self, _id: int | None = None) -> float | None:

@@ -12,10 +12,10 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 // Register the components and the annotation plugin
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, annotationPlugin);
 
-function BulletChart({ value, target = 80 }) {
+function BulletChart({ value, limit = 50 }) {
   const getBarColor = (val) => {
-    if (val >= 90) return '#d63031'; // Deep Red for critical
-    if (val >= 70) return '#fdcb6e'; // Bright Gold for warning
+    if (val >= limit) return '#d63031'; // Deep Red for critical
+    if (val >= limit - 10) return '#fdcb6e'; // Bright Gold for warning
     return '#0984e3'; // Strong Blue for healthy
   };
 
@@ -39,7 +39,7 @@ function BulletChart({ value, target = 80 }) {
     scales: {
       x: {
         min: 0,
-        max: 100,
+        max: Math.max(limit + 10, value),
         grid: { display: false  },
       },
       y: {
@@ -54,21 +54,21 @@ function BulletChart({ value, target = 80 }) {
           lowZone: {
             drawTime: 'beforeDatasetsDraw',
             type: 'box',
-            xMin: 0, xMax: 60,
+            xMin: 0, xMax: limit - 10,
             backgroundColor: 'rgba(46, 204, 113, 0.15)', // Light Mint
           },
           // 2. Background "Warning" Zone
           midZone: {
             drawTime: 'beforeDatasetsDraw',
             type: 'box',
-            xMin: 60, xMax: 85,
+            xMin: limit - 10, xMax: limit,
             backgroundColor: 'rgba(241, 196, 15, 0.15)', // Light Amber
           },
           // 3. Background "Critical" Zone
           highZone: {
             drawTime: 'beforeDatasetsDraw',
             type: 'box',
-            xMin: 85, xMax: 100,
+            xMin: limit, xMax: Math.max(limit + 10, value),
             backgroundColor: 'rgba(231, 76, 60, 0.15)', // Light Coral
           },
         },
