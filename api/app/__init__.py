@@ -1,6 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 from redis import Redis
+from .config import Config
 
 import threading
 from flask import Flask
@@ -10,7 +11,7 @@ from flask_socketio import SocketIO
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", engineio_logger=True, logger=True)
-r = Redis(host='localhost', port=6379)
+r = Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT)
 
 from .controllers.banho import bp as banho_bp
 from .listener import redis_listener
@@ -35,3 +36,9 @@ def main():
 
 if __name__ == '__main__':
     main()
+else:
+    print("App imported as a module.")
+    thread = threading.Thread(target=redis_listener)
+    thread.daemon = True
+    print("Starting Redis listener thread...")
+    thread.start()

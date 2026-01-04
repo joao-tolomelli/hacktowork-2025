@@ -14,7 +14,7 @@ class MessageService:
         BanhoService.store_status(data)
 
     @staticmethod
-    def notify_limite():
-        r.publish("chuveiro:limite:notifications", datetime.datetime.now(datetime.timezone.utc).isoformat())
+    def notify_limite(level: str):
+        r.publish("chuveiro:limite:notifications", level)
 
 from .banho import BanhoService

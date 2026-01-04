@@ -1,10 +1,11 @@
 from redis import Redis
 
+from .config import Config
 from .services.message import MessageService
 
 
 def redis_listener():
-    r = Redis(host='localhost', port=6379)
+    r = Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT)
     print("Starting Redis listener...")
     pubsub = r.pubsub()
     # subscribe to all the channels and set their callables

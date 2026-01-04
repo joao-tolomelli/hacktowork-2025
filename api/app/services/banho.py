@@ -61,7 +61,11 @@ class BanhoService:
         print(last_banho.to_dict())
         if last_banho.volume_agua >= last_banho.limite:
             print("Banho duration limit reached. Sending notification...")
-            MessageService.notify_limite()
+            MessageService.notify_limite("ESTOURO")
+            print("Notification sent.")
+        elif last_banho.volume_agua >= last_banho.limite - 10.0:
+            print("Banho duration limit approaching. Sending notification...")
+            MessageService.notify_limite("PROXIMO")
             print("Notification sent.")
         cls.notify_banho_update()
         return last_banho

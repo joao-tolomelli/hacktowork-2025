@@ -61,7 +61,8 @@ def redis_listener(mqtt_client):
     for message in pubsub.listen():
         if message['type'] == 'message':
             print(f"Redis Notification - New limite value: {message['data'].decode()}")
-            mqtt_client.publish("chuveiro/limite", "ESTOURO", qos=1)
+            value = message['data'].decode()
+            mqtt_client.publish("chuveiro/limite", value, qos=1)
 
 
 def main():
