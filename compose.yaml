@@ -1,0 +1,62 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      # Standard MQTT port
+      - "1883:1883"
+      # MQTT over secure WebSocket (for web browsers)
+      - "9001:9001"
+      # Standard MQTT over TLS/SSL (encrypted)
+      - "8883:8883"
+    volumes:
+      # Mount the custom configuration file
+      - ./broker/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      # Volume for persistent data (message persistence, retained messages, etc.)
+      - ./broker/data:/mosquitto/data
+      # Volume for logs
+      - ./broker/log:/mosquitto/log
+    networks:
+      - hacktowork2025
+
+  redis:
+    image: redis
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    volumes:
+      - redis_db:/data
+    networks:
+      - hacktowork2025
+
+  subscriber:
+    build: ./subscriber/
+    networks:
+      - hacktowork2025
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BROKER_HOST=mosquitto
+      - BROKER_PORT=1883
+
+  api:
+    build: ./api/
+    ports:
+      - "5000:5000"
+    networks:
+      - hacktowork2025
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./api/hacktowork.db:/app/hacktowork.db
+
+volumes:
+  redis_db:
+
+networks:
+  hacktowork2025:

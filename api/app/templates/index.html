@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HacktoWork 2025</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+</head>
+<body>
+    <header>
+        <h1>Bem-vindo ao HacktoWork 2025</h1>
+    </header>
+    <main>
+        <section>
+            <div style="width: 80%; margin: auto;">
+                <canvas id="sensorChart"></canvas>
+            </div>
+            <h2>Últimas Mensagens</h2>
+            <ul id="message-list">
+                <!-- As mensagens serão inseridas aqui dinamicamente -->
+                 {% for message in messages %}
+                    <li>{{ message }}</li>
+                 {% endfor %}
+            </ul>
+        </section>
+    </main>
+    <script>
+        async function renderChart() {
+            // 1. Fetch data from your Flask API
+            const response = await fetch('/api/history/chuveiro');
+            const data = await response.json();
+
+            const ctx = document.getElementById('sensorChart').getContext('2d');
+            const THRESHOLD = 1500;
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'Consumo (L)',
+                        data: data.values,
+                        tension: 0.1,
+                        // This is the default color for the line
+                        borderColor: 'rgb(75, 192, 192)',
+                        // The "Pro" segment logic
+                        segment: {
+                            borderColor: ctx => {
+                                // Fallback logic: check p1 (end of line), then p0 (start of line)
+                                const val = ctx.p1.raw ?? ctx.p0.raw;
+                                return val > THRESHOLD ? 'rgb(255, 99, 132)' : undefined;
+                            },
+                            borderDash: ctx => {
+                                const val = ctx.p1.raw ?? ctx.p0.raw;
+                                return val > THRESHOLD ? [6, 6] : undefined;
+                            }
+                        },
+                        // --- New: Logic for the dots ---
+                        pointBackgroundColor: (context) => {
+                            const value = context.raw;
+                            return value > THRESHOLD ? 'rgb(255, 99, 132)' : 'rgb(75, 192, 192)';
+                        },
+                        pointBorderColor: (context) => {
+                            const value = context.raw;
+                            return value > THRESHOLD ? 'rgb(255, 99, 132)' : 'rgb(75, 192, 192)';
+                        },
+                        pointRadius: 5, // Makes the dots easier to see
+                    }]
+                },
+                options: {
+                    plugins: {
+                        annotation: {
+                            annotations: {
+                                line1: {
+                                    type: 'line',
+                                    yMin: THRESHOLD,
+                                    yMax: THRESHOLD,
+                                    borderColor: 'rgba(255, 99, 132, 0.8)',
+                                    borderWidth: 2,
+                                    label: {
+                                        content: 'Critical Threshold',
+                                        display: true, // Use 'display' instead of 'enabled' for v3/v4
+                                        position: 'end'
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        renderChart();
+    </script>
+</body>
+</html>
