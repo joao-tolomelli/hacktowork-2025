@@ -49,12 +49,24 @@ Em resumo, o firmware monitora o consumo de água, envia dados para um servidor 
 
 ### Aplicação Web
 
-Componentes:
+#### Componentes
 
 - Banco Redis, para operações Pub/Sub;
 - Aplicação Subscriber (Python), inscrita nos tópicos do servidor MQTT;
 - Backend (Python, Flask): manipula os dados em banco de dados SQLite, gerencia a conexão de Websocket com o Frontend.
 - Frontend (JavaScript, React): interface web do sistema, mostra uma dashboard com os banhos registrados, com atualizações em tempo real.
+
+#### Funcionamento
+
+1. A aplicação Subscriber escuta os tópicos relevantes no broker MQTT e envia uma notificação _pub/sub_ para o banco Redis.
+
+2. Uma thread secundária do Backend escuta os canais de Pub/Sub do Redis e altera o estado do sistema de acordo, notificando todos os clientes conectados ao servidor sobre as mudanças.
+
+3. Os clientes (frontend) requisitam os dados mais recentes e atualizam a página.
+
+4. Se o consumo daquele banho específico exceder o limite estipulado, o backend envia uma notificação pub/sub ao Redis especificando o nível de alerta.
+
+5. A aplicação Subscriber recebe a notificação de alerta via Redis e transmite ao servidor MQTT, para que o sistema embarcado receba a mensagem.
 
 ## Como rodar
 
