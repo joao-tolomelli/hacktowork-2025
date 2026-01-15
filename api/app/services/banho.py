@@ -50,7 +50,9 @@ class BanhoService:
                 data_criacao=last.data_criacao,
                 data_modificacao=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 duracao=last.duracao + 5,  # assumindo que a telemetria chega a cada 5 segundos
-                volume_agua=last.volume_agua + float(data)
+                volume_agua=last.volume_agua + float(data),
+                limite=last.limite,
+                em_andamento=last.em_andamento
             )
         else:
             print("Last banho record is not in progress. Creating a new one...")

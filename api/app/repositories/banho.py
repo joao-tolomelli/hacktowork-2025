@@ -50,11 +50,11 @@ class BanhoRepository:
 
     def create_banho(self) -> Banho:
         _banho = Banho.default()
-        _limite = self.get_banho_limit()
+        # _limite = self.get_banho_limit()
         self.cursor.execute('''
             INSERT INTO banhos (id, data_criacao, data_modificacao, duracao, volume_agua, em_andamento, limite)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (_banho._id, _banho.data_criacao, _banho.data_modificacao, _banho.duracao, _banho.volume_agua, _banho.em_andamento, _limite))
+        ''', (_banho._id, _banho.data_criacao, _banho.data_modificacao, _banho.duracao, _banho.volume_agua, _banho.em_andamento, _banho.limite))
         self.conn.commit()
         return _banho
 

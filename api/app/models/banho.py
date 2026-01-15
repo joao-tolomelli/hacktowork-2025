@@ -29,8 +29,8 @@ class Banho:
     volume_agua: float  # volume de água em litros
     data_criacao: str  # ISO formatted date-time string
     data_modificacao: str | None  # ISO formatted date-time string
+    limite: float  # limite de volume de água em litros
     em_andamento: bool = True  # indica se o banho está em andamento
-    limite: float = 50.0  # limite de volume de água em litros
 
     @classmethod
     def default(cls):
@@ -41,7 +41,7 @@ class Banho:
             data_criacao=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             data_modificacao=None,
             em_andamento=True,
-            limite=50.0
+            limite=1.0
         )
 
     def to_dict(self):

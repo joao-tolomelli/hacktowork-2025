@@ -1,7 +1,12 @@
 # Hack to Work 2025
 
 - Trilha: Sistemas embarcados, sustentabilidade.
-- Proposta: um sistema de monitoramento residencial de consumo de água, com alarmes.
+
+## Proposta
+
+Um sistema de monitoramento residencial de consumo de água, com alarmes.
+
+
 
 ## Arquitetura
 
